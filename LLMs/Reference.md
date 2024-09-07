@@ -98,6 +98,20 @@ CLIP 把自然语言级别的抽象概念带到计算机视觉里了。确定一
 
 # 09. Attention计算复杂度以及如何改进
 
+- encoder_hidden_states is (batch_size, seq_len, config.hidden_size) x is b * seq_len * hidden_size(768)
+- self.query = nn.Linear(config.hidden_size, self.all_head_size) W is d * d, output of self.query is b * seq_len * all_head_size(768=12*64)
+
+- query_layer = transpose_for_scores(self.query(encoder_hidden_states))  
+  - after transpose reshape last dimision all_head_size into num_heads*head_size and use permute to easy computer ->into (batch_size, **num_heads**, seq_len, **head_size**)
+- attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+- attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+- attention_scores = attention_scores + attention_mask
+- attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+- context_layer = torch.matmul(attention_probs, value_layer)
+- context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+- new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+- context_layer = context_layer.view(new_context_layer_shape)
+
 - 代码中的to_qkv()函数，即用于生成q、k、v三个特征向量
 
 ![Alt](assert/attention.png#pic_center=600x400)
@@ -125,6 +139,12 @@ self.to_out = nn.Linear(inner_dim, dim)
 # 11. 介绍transformer算法
 
 Transformer本身是一个典型的encoder-decoder模型，Encoder端和Decoder端均有6个Block，Encoder端的Block包括两个模块，多头self-attention模块以及一个前馈神经网络模块；Decoder端的Block包括三个模块，多头self-attention模块，多头Encoder-Decoder attention交互模块，以及一个前馈神经网络模块；需要注意：Encoder端和Decoder端中的每个模块都有残差层和Layer Normalization层。
+
+# 12. Transformer的层融合是如何做到的，其中Residue Network与Layer Norm如何算子融合
+ 传统residual connection， layer normalization are compute separately，多存了一个残差连接变量。
+ - 传统 Z= X + SubLayer(X) + LayerNorm(Z)
+ - 现在直接  LayerNorm (X + SubLayer(X))
+ - 减少了内存占用。 LayerNorm 的操作合并到一次矩阵运算中，减少了多次调用计算单元的开销
 
 # 14. 在大型语言模型 (llms) 中减少幻觉的策略有哪些？
 
