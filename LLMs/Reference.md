@@ -303,8 +303,32 @@ https://zhuanlan.zhihu.com/p/628438318
 
 # 41. MHA多头注意力和MQA多查询注意力的区别？
 
-- 与MHA不同的是，MQA 让所有的头之间共享同一份 Key 和 Value 矩阵，每个头只单独保留了一份 Query 参数，从而大大减少 Key 和 Value 矩阵的参数量。
+- 与MHA不同的是，MQA 让所有的头之间共享同一份 Key 和 Value 矩阵，每个头只单独保留了一份 Query 参数，从而大大减少 Key 和 Value 矩阵的参数量。主要应用在生成式任务（如 GPT 系列模型）中，通过减少 Key 和 Value 的数量，降低了内存使用和计算成本。 KV-cache. 新的K，V 会concate 到以前的KV matrix上。  O(N x N x d) -> O(N x d) 
+![Screenshot 2024-09-07 at 16 38 35](https://github.com/user-attachments/assets/64534012-807f-44c0-bd15-7ff50b15bd9b)
 
+```
+    def forward(self, hidden_states, past_key_value=None):
+        # Compute query, key, value
+        query = self.query(hidden_states)
+        new_key = self.key(hidden_states)
+        new_value = self.value(hidden_states)
+
+        # Initialize or update key-value cache
+        if past_key_value is None:
+            key_cache = new_key
+            value_cache = new_value
+        else:
+            key_cache = torch.cat([past_key_value[0], new_key], dim=1)  # Append new keys
+            value_cache = torch.cat([past_key_value[1], new_value], dim=1)  # Append new values
+
+        # Compute attention using the cached keys and values
+        attention_scores = torch.matmul(query, key_cache.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+        context = torch.matmul(attention_probs, value_cache)
+        
+        # Return context and updated cache
+        return context, (key_cache, value_cache)
+```
 # 42. 推理优化技术 Flash Attention 的作用是什么？
 
 Flash Attention 是一种高效的注意力机制实现，如共享张量核心和高效的内存使用，以减少内存占用并提高计算速度。这种方法特别适用于具有长序列和大型模型参数的场景，例如自然语言处理和推荐系统。
